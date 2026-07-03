@@ -1,0 +1,25 @@
+FROM rocm/pytorch:rocm6.1_ubuntu22.04_py3.10_pytorch_2.3.0
+
+# Copy the uv binary from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Copy lock files and project definitions
+COPY pyproject.toml uv.lock ./
+
+# Synchronize python environment (frozen lock dependencies)
+RUN uv sync --frozen --no-dev
+
+# Copy backend codebase
+COPY . /app/backend
+
+# Configure python path and cache locations
+ENV PYTHONPATH=/app
+ENV HF_HOME=/root/.cache/huggingface
+VOLUME ["/root/.cache/huggingface"]
+
+EXPOSE 8000
+
+# Run uvicorn using the synchronized virtualenv
+CMD ["/app/.venv/bin/uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
