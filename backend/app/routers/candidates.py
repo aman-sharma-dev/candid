@@ -4,17 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from backend.db import get_db
-from backend.config import settings
-from backend.models import Candidate as DBCandidate
-from backend.models import Job as DBJob
-from backend.schemas import CandidateResponse
-from backend.services.parser import extract_text_from_pdf, parse_resume_text
-from backend.services.github import extract_github_profile
+from app.core.db import get_db
+from app.core.config import settings
+from app.models.models import Candidate as DBCandidate
+from app.models.models import Job as DBJob
+from app.schemas.schemas import CandidateResponse
+from app.services.parser import extract_text_from_pdf, parse_resume_text
+from app.services.github import extract_github_profile
 
 logger = logging.getLogger("CandidatesRouter")
 
 router = APIRouter(prefix="/api", tags=["Candidates"])
+
 
 @router.post("/candidates", response_model=CandidateResponse)
 async def create_candidate(
@@ -29,7 +30,7 @@ async def create_candidate(
     parsed_text = ""
     skills = []
     experience = []
-    
+
     # 1. Parse Resume File or Text
     if file:
         file_bytes = await file.read()
@@ -37,7 +38,7 @@ async def create_candidate(
             parsed_text = extract_text_from_pdf(file_bytes)
         else:
             parsed_text = file_bytes.decode("utf-8", errors="ignore")
-        
+
         parsed_info, skills = parse_resume_text(parsed_text, filename=file.filename)
     elif text_resume:
         parsed_text = text_resume
@@ -72,13 +73,15 @@ async def create_candidate(
     db.add(db_candidate)
     db.commit()
     db.refresh(db_candidate)
-    
+
     logger.info(f"Ingested Candidate: {candidate_name} ({candidate_id})")
     return db_candidate
+
 
 @router.get("/candidates", response_model=List[CandidateResponse])
 def list_candidates(db: Session = Depends(get_db)):
     return db.query(DBCandidate).all()
+
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateResponse)
 def get_candidate(candidate_id: str, db: Session = Depends(get_db)):
@@ -87,15 +90,16 @@ def get_candidate(candidate_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Candidate not found")
     return db_cand
 
+
 # Protected Demo Seed Endpoint
 @router.post("/demo/seed")
 async def seed_demo_candidates(db: Session = Depends(get_db)):
     # Protection flag check
     if not settings.DEMO_MODE:
         raise HTTPException(status_code=403, detail="Demo Mode seeding is disabled in production settings.")
-        
+
     logger.info("Seeding candidate talent pool with realistic demo profiles...")
-    
+
     # 1. Seed sample jobs if they do not exist
     if not db.query(DBJob).filter(DBJob.id == "job-ai-eng-1").first():
         db_job_1 = DBJob(
@@ -105,7 +109,7 @@ async def seed_demo_candidates(db: Session = Depends(get_db)):
             requirements=["Python", "PyTorch", "ROCm", "CUDA", "Docker", "FastAPI", "Embeddings"]
         )
         db.add(db_job_1)
-        
+
     if not db.query(DBJob).filter(DBJob.id == "job-fe-nextjs-2").first():
         db_job_2 = DBJob(
             id="job-fe-nextjs-2",

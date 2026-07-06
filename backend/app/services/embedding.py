@@ -5,7 +5,7 @@ import re
 from collections import Counter
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Tuple
-from backend.gpu_init import device
+from app.core.gpu_init import device
 
 logger = logging.getLogger("EmbeddingService")
 

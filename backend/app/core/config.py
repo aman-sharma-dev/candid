@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     GITHUB_TOKEN: Optional[str] = os.getenv("GITHUB_TOKEN", None)
 
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
         extra = "ignore"
 
 

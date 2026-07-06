@@ -1,0 +1,10 @@
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+.git
+.gitignore
+sqlite_fallback.db
+.cache
+.huggingface
+tests/__pycache__

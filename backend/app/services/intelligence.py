@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
-from backend.schemas import CandidateAnalysis
+from app.schemas.schemas import CandidateAnalysis
+
 
 def generate_intelligence_report(
     candidate_id: str,
@@ -15,25 +16,25 @@ def generate_intelligence_report(
     Generates a localized, highly detailed intelligence report comparing candidate profiles against job specifications.
     Operates on CPU, completely self-contained.
     """
-    
+
     # 1. Identify Strengths and Gaps
     # Case-insensitive mapping
     candidate_skills_lower = {s.lower() for s in candidate_skills}
-    
+
     # Add GitHub languages to candidate skills if available
     if github_data and "languages" in github_data:
         for lang in github_data["languages"]:
             candidate_skills_lower.add(lang.lower())
-            
+
     strengths = []
     gaps = []
-    
+
     for req in job_requirements:
         if req.lower() in candidate_skills_lower:
             strengths.append(req)
         else:
             gaps.append(req)
-            
+
     # If no explicit strengths or gaps are identified, add generic ones
     if not strengths:
         # Fallback: take candidate's top listed skills
@@ -43,11 +44,11 @@ def generate_intelligence_report(
 
     # 2. Formulate Candidate Summary
     score_pct = int(similarity_score * 100)
-    
+
     # Analyze experience level from GitHub or resume if possible
     github_repo_count = github_data.get("public_repos", 0) if github_data else 0
     github_followers = github_data.get("followers", 0) if github_data else 0
-    
+
     experience_summary = ""
     if github_data and github_repo_count > 0:
         experience_summary = f" The candidate exhibits an active public footprint with {github_repo_count} repositories, demonstrating a commitment to open-source and collaborative coding."
@@ -82,19 +83,19 @@ def generate_intelligence_report(
 
     # 3. Generate Customized Interview Questions
     interview_questions = []
-    
+
     # Generate question for strengths (depth verification)
     for strength in strengths[:2]:
         interview_questions.append(
             f"Can you detail a production-level challenge you faced when working with {strength}, and how you optimized its implementation?"
         )
-        
+
     # Generate question for gaps (adaptability verification)
     for gap in gaps[:2]:
         interview_questions.append(
             f"The {job_title} role relies heavily on {gap}. How would you leverage your existing experience to quickly learn and adopt this technology?"
         )
-        
+
     # Generate Github specific question if candidate has github activity
     if github_data and github_data.get("repositories"):
         top_repo = github_data["repositories"][0]["name"]

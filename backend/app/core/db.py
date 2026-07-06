@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from backend.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger("Database-Init")
 
@@ -18,7 +18,7 @@ if db_url and db_url.startswith("postgresql"):
 else:
     logger.info("Configured SQLite fallback database")
 
-# Create engine with production‑ready pooling
+# Create engine with production-ready pooling
 engine = create_engine(
     db_url,
     connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},

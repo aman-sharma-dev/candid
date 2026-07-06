@@ -3,39 +3,40 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from backend.db import get_db
-from backend.models import Job as DBJob
-from backend.models import Candidate as DBCandidate
-from backend.schemas import RankingResponse, CandidateAnalysis, ClusterResult
-from backend.services.embedding import generate_embeddings, calculate_similarity, cluster_candidates
-from backend.services.intelligence import generate_intelligence_report
+from app.core.db import get_db
+from app.models.models import Job as DBJob
+from app.models.models import Candidate as DBCandidate
+from app.schemas.schemas import RankingResponse, CandidateAnalysis, ClusterResult
+from app.services.embedding import generate_embeddings, calculate_similarity, cluster_candidates
+from app.services.intelligence import generate_intelligence_report
 
 logger = logging.getLogger("AnalyticsRouter")
 
 router = APIRouter(prefix="/api/jobs", tags=["Analytics"])
+
 
 @router.get("/{job_id}/rankings", response_model=RankingResponse)
 async def get_job_rankings(job_id: str, db: Session = Depends(get_db)):
     db_job = db.query(DBJob).filter(DBJob.id == job_id).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
-        
+
     candidates = db.query(DBCandidate).all()
     if not candidates:
         return RankingResponse(job_id=job_id, rankings=[], clusters=[])
 
     # 1. Compile texts for embeddings
     job_text = f"Job Title: {db_job.title}\nDescription: {db_job.description}\nRequirements: {', '.join(db_job.requirements)}"
-    
+
     candidate_texts = []
     candidate_ids = []
-    
+
     for cand in candidates:
         github_summary = ""
         if cand.github_data and not cand.github_data.get("error"):
             gh = cand.github_data
             github_summary = f"GitHub Bio: {gh.get('bio', '')}\nLanguages: {', '.join(gh.get('languages', {}).keys())}"
-            
+
         cand_text = (
             f"Candidate: {cand.name}\n"
             f"Skills: {', '.join(cand.skills)}\n"
@@ -49,7 +50,7 @@ async def get_job_rankings(job_id: str, db: Session = Depends(get_db)):
     # 2. Run GPU Inference: Generate embeddings
     logger.info(f"Computing embeddings for 1 Job and {len(candidates)} Candidates...")
     embeddings = generate_embeddings([job_text] + candidate_texts)
-    
+
     job_embedding = embeddings[0]
     candidate_embeddings = embeddings[1:]
 
@@ -62,7 +63,7 @@ async def get_job_rankings(job_id: str, db: Session = Depends(get_db)):
     for idx, cand_id in enumerate(candidate_ids):
         cand = db.query(DBCandidate).filter(DBCandidate.id == cand_id).first()
         score = similarities_list[idx]
-        
+
         report = generate_intelligence_report(
             candidate_id=cand_id,
             candidate_name=cand.name,
@@ -80,7 +81,7 @@ async def get_job_rankings(job_id: str, db: Session = Depends(get_db)):
 
     # 5. Run GPU Inference: Clustering candidates (PyTorch K-Means)
     clusters_data = cluster_candidates(candidate_ids, candidate_texts, k=3)
-    
+
     clusters = [
         ClusterResult(
             cluster_id=c["cluster_id"],

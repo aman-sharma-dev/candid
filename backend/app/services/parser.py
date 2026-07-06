@@ -16,6 +16,7 @@ SKILLS_VOCABULARY = [
     "System Design", "Microservices", "REST API", "GraphQL"
 ]
 
+
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """Extracts all text from PDF bytes."""
     try:
@@ -30,6 +31,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     except Exception as e:
         logger.error(f"Error reading PDF: {e}")
         return ""
+
 
 def parse_resume_text(text: str, filename: str = "") -> Tuple[Dict[str, Any], List[str]]:
     """
@@ -58,7 +60,7 @@ def parse_resume_text(text: str, filename: str = "") -> Tuple[Dict[str, Any], Li
             if 1 <= len(words) <= 4 and all(w[0].isupper() or w[0].isdigit() or w.lower() in ["de", "von", "van"] for w in words if w):
                 name = line
                 break
-    
+
     if not name:
         # Fallback to filename (strip extension)
         if filename:
@@ -74,7 +76,7 @@ def parse_resume_text(text: str, filename: str = "") -> Tuple[Dict[str, Any], Li
         # Handle cases like Next.js, C++ which don't have standard word boundaries at the end
         if skill.endswith('.') or skill.endswith('+'):
             pattern = r'\b' + re.escape(skill)
-        
+
         if re.search(pattern, text, re.IGNORECASE):
             skills.append(skill)
 
@@ -82,11 +84,11 @@ def parse_resume_text(text: str, filename: str = "") -> Tuple[Dict[str, Any], Li
     experience = []
     exp_keywords = ["engineer", "developer", "scientist", "analyst", "lead", "manager", "intern"]
     date_pattern = r'\b(19|20)\d{2}\b'
-    
+
     for line in lines:
         if any(kw in line.lower() for kw in exp_keywords) and (re.search(date_pattern, line) or any(m in line.lower() for m in ["present", "current"])):
             experience.append(line)
-            if len(experience) >= 5: # Limit to top 5 experience highlights
+            if len(experience) >= 5:  # Limit to top 5 experience highlights
                 break
 
     parsed_info = {
@@ -96,5 +98,5 @@ def parse_resume_text(text: str, filename: str = "") -> Tuple[Dict[str, Any], Li
         "skills": skills,
         "experience": experience
     }
-    
+
     return parsed_info, skills

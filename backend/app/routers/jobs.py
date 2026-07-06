@@ -3,11 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from backend.db import get_db
-from backend.models import Job as DBJob
-from backend.schemas import JobCreate, JobResponse
+from app.core.db import get_db
+from app.models.models import Job as DBJob
+from app.schemas.schemas import JobCreate, JobResponse
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
+
 
 @router.post("", response_model=JobResponse)
 def create_job(job: JobCreate, db: Session = Depends(get_db)):
@@ -23,9 +24,11 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
     db.refresh(db_job)
     return db_job
 
+
 @router.get("", response_model=List[JobResponse])
 def list_jobs(db: Session = Depends(get_db)):
     return db.query(DBJob).all()
+
 
 @router.get("/{job_id}", response_model=JobResponse)
 def get_job(job_id: str, db: Session = Depends(get_db)):

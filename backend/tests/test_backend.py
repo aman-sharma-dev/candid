@@ -6,26 +6,27 @@ from unittest.mock import patch, MagicMock
 # Ensure backend package can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.services.parser import parse_resume_text
-from backend.services.intelligence import generate_intelligence_report
-from backend.services.github import extract_github_profile
+from app.services.parser import parse_resume_text
+from app.services.intelligence import generate_intelligence_report
+from app.services.github import extract_github_profile
+
 
 class TestBackendServices(unittest.IsolatedAsyncioTestCase):
-    
+
     def test_resume_parser(self):
         text = """
         John Doe
         Email: john.doe@example.com
         Phone: (123) 456-7890
-        
+
         Experience:
         Senior Software Engineer (2020 - Present)
         Developed AI platforms using PyTorch, FastAPI, and Docker.
         Experienced with React and Next.js for frontend work.
         """
-        
+
         parsed, skills = parse_resume_text(text, filename="john_doe_cv.pdf")
-        
+
         self.assertEqual(parsed["name"], "John Doe")
         self.assertEqual(parsed["email"], "john.doe@example.com")
         self.assertEqual(parsed["phone"], "(123) 456-7890")
@@ -40,7 +41,7 @@ class TestBackendServices(unittest.IsolatedAsyncioTestCase):
     def test_intelligence_report(self):
         job_requirements = ["Python", "PyTorch", "Kubernetes", "React"]
         candidate_skills = ["Python", "PyTorch", "Docker"]
-        
+
         report = generate_intelligence_report(
             candidate_id="cand-123",
             candidate_name="Jane Smith",
@@ -51,7 +52,7 @@ class TestBackendServices(unittest.IsolatedAsyncioTestCase):
             similarity_score=0.78,
             github_data={"public_repos": 12, "followers": 8}
         )
-        
+
         self.assertEqual(report.candidate_id, "cand-123")
         self.assertEqual(report.candidate_name, "Jane Smith")
         self.assertEqual(report.job_id, "job-456")
@@ -66,11 +67,12 @@ class TestBackendServices(unittest.IsolatedAsyncioTestCase):
     async def test_github_fallback(self, mock_get):
         # Mock request error to test graceful fallback
         mock_get.side_effect = Exception("Connection refused")
-        
+
         profile = await extract_github_profile("invalid-user-123")
         self.assertEqual(profile["username"], "invalid-user-123")
         self.assertEqual(profile["public_repos"], 14)
         self.assertEqual(profile["error"], None)
+
 
 if __name__ == "__main__":
     unittest.main()
