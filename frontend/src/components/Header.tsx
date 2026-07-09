@@ -22,14 +22,23 @@ export default function Header({
   systemStatus,
   onReloadStatus,
 }: HeaderProps) {
+  const deviceLabel = systemStatus.device.toLowerCase() === "cuda"
+    ? "CUDA"
+    : systemStatus.device.toLowerCase() === "rocm"
+    ? "ROCm"
+    : systemStatus.device;
+  const statusTitle = systemStatus.gpu_available
+    ? `${deviceLabel} · ${systemStatus.gpu_name}`
+    : "CPU Fallback";
+
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-slate-900 bg-slate-950/80 backdrop-blur-md z-10">
       <div className="flex items-center space-x-3">
-        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-tr from-cyan-500 to-purple-600 shadow-lg shadow-cyan-500/20">
+        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-linear-to-tr from-cyan-500 to-purple-600 shadow-lg shadow-cyan-500/20">
           <Cpu className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h1 className="text-md font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+          <h1 className="text-md font-bold tracking-tight bg-linear-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
             CandidAI <span className="text-slate-400">| Candidate Intelligence Dashboard</span>
           </h1>
           <p className="text-[10px] text-cyan-400 font-mono tracking-wider">AI Screening Engine powered by AMD ROCm GPU</p>
@@ -61,9 +70,11 @@ export default function Header({
           <span className={`w-2 h-2 rounded-full ${
             systemStatus.gpu_available ? "bg-cyan-400 animate-pulse" : "bg-amber-400"
           }`} />
-          <span>
-            {systemStatus.gpu_available ? `GPU: [ROCm/CUDA]` : `CPU Fallback`}
-          </span>
+          <span title={statusTitle}>
+  {systemStatus.gpu_available
+    ? `GPU: ${deviceLabel}`
+    : "CPU Fallback"}
+</span>
         </div>
 
         <button
