@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import {
-  Briefcase,
   Users,
   UploadCloud,
   Cpu,
@@ -14,7 +12,8 @@ import {
   Award,
   Sparkles,
   Info,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
 
 // Subcomponents
@@ -70,7 +69,6 @@ interface GPUStatus {
 }
 
 export default function DashboardCockpit() {
-  const router = useRouter();
 
   // Navigation & Core State
   const [activeTab, setActiveTab] = useState<"jobs" | "candidates" | "ingest" | "analytics">("jobs");
@@ -120,13 +118,6 @@ export default function DashboardCockpit() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch initial data
-  useEffect(() => {
-    fetchJobs();
-    fetchCandidates();
-    fetchSystemStatus();
-  }, []);
-
   const fetchJobs = async () => {
     try {
       const res = await fetch("/api/jobs");
@@ -163,6 +154,20 @@ export default function DashboardCockpit() {
       console.error("Error fetching status:", e);
     }
   };
+
+  // Fetch initial data
+  useEffect(() => {
+  const loadInitialData = async () => {
+    await Promise.all([
+      fetchJobs(),
+      fetchCandidates(),
+      fetchSystemStatus(),
+    ]);
+  };
+
+  loadInitialData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   const triggerDemoSeed = async () => {
     setIsSeedingDemo(true);
@@ -293,6 +298,43 @@ export default function DashboardCockpit() {
     }
   };
 
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/jobs?id=${encodeURIComponent(jobId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && !data.error) {
+        setJobs((prev) => prev.filter((job) => job.id !== jobId));
+        if (selectedJobId === jobId) {
+          setSelectedJobId("");
+          setRankings([]);
+          setClusters([]);
+          setActiveRankedCandidateId(null);
+        }
+      }
+    } catch (e) {
+      console.error("Error deleting job:", e);
+    }
+  };
+
+  const handleDeleteCandidate = async (candidateId: string) => {
+    try {
+      const res = await fetch(`/api/candidates?id=${encodeURIComponent(candidateId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && !data.error) {
+        setCandidates((prev) => prev.filter((candidate) => candidate.id !== candidateId));
+        if (selectedCandidate?.id === candidateId) {
+          setSelectedCandidate(null);
+        }
+      }
+    } catch (e) {
+      console.error("Error deleting candidate:", e);
+    }
+  };
+
   const handleToggleDemoMode = () => {
     if (!demoMode) {
       // Prompt verification modal before enabling
@@ -361,7 +403,7 @@ export default function DashboardCockpit() {
                 </div>
                 <button
                   onClick={() => setShowAddJobModal(true)}
-                  className="flex items-center px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg hover:from-cyan-600 hover:to-cyan-700 shadow shadow-cyan-500/20 transition active:scale-95"
+                  className="flex items-center px-4 py-2 text-xs font-semibold text-white bg-linear-to-r from-cyan-500 to-cyan-600 rounded-lg hover:from-cyan-600 hover:to-cyan-700 shadow shadow-cyan-500/20 transition active:scale-95"
                 >
                   <Plus className="w-4 h-4 mr-1.5" /> Add Job Profile
                 </button>
@@ -417,6 +459,12 @@ export default function DashboardCockpit() {
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-slate-900 flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleDeleteJob(job.id)}
+                        className="flex items-center px-3 py-1.5 text-xxs font-bold text-rose-400 border border-rose-800/40 bg-rose-950/10 hover:bg-rose-950/20 rounded-md transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                      </button>
                       <button
                         onClick={() => {
                           setSelectedJobId(job.id);
@@ -488,35 +536,47 @@ export default function DashboardCockpit() {
                   {/* Left Column: List of candidates */}
                   <div className="lg:col-span-1 space-y-3 max-h-[70vh] overflow-y-auto pr-2">
                     {candidates.map((cand) => (
-                      <button
+                      <div
                         key={cand.id}
-                        onClick={() => setSelectedCandidate(cand)}
-                        className={`w-full text-left p-4 rounded-xl border transition ${
+                        className={`w-full p-4 rounded-xl border transition ${
                           selectedCandidate?.id === cand.id
                             ? "bg-slate-900 border-cyan-500/40 text-white shadow-md shadow-cyan-500/5"
                             : "bg-slate-900/30 border-slate-900/80 hover:bg-slate-900/60 text-slate-300"
                         }`}
                       >
-                        <div className="flex justify-between items-start">
-                          <h4 className="font-bold text-xs text-white">{cand.name}</h4>
+                        <button
+                          onClick={() => setSelectedCandidate(cand)}
+                          className="w-full text-left"
+                        >
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-bold text-xs text-white">{cand.name}</h4>
+                          </div>
+                          <div className="flex flex-col space-y-0.5 mt-2 text-xxs text-slate-500">
+                            {cand.email && <span className="truncate">{cand.email}</span>}
+                            {cand.phone && <span>{cand.phone}</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-3">
+                            {cand.skills.slice(0, 3).map((skill, i) => (
+                              <span key={i} className="text-xxs px-2 py-0.5 bg-slate-950 border border-slate-900 rounded text-slate-400">
+                                {skill}
+                              </span>
+                            ))}
+                            {cand.skills.length > 3 && (
+                              <span className="text-xxs px-1.5 py-0.5 text-slate-500 font-bold">
+                                +{cand.skills.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            onClick={() => handleDeleteCandidate(cand.id)}
+                            className="flex items-center px-3 py-1.5 text-xxs font-bold text-rose-400 border border-rose-800/40 bg-rose-950/10 hover:bg-rose-950/20 rounded-md transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                          </button>
                         </div>
-                        <div className="flex flex-col space-y-0.5 mt-2 text-xxs text-slate-500">
-                          {cand.email && <span className="truncate">{cand.email}</span>}
-                          {cand.phone && <span>{cand.phone}</span>}
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-3">
-                          {cand.skills.slice(0, 3).map((skill, i) => (
-                            <span key={i} className="text-xxs px-2 py-0.5 bg-slate-950 border border-slate-900 rounded text-slate-400">
-                              {skill}
-                            </span>
-                          ))}
-                          {cand.skills.length > 3 && (
-                            <span className="text-xxs px-1.5 py-0.5 text-slate-500 font-bold">
-                              +{cand.skills.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
 
@@ -525,7 +585,7 @@ export default function DashboardCockpit() {
                     {selectedCandidate ? (
                       <CandidateDetail candidate={selectedCandidate} />
                     ) : (
-                      <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-[300px]">
+                      <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-75">
                         <FileText className="w-10 h-10 mb-3 text-slate-700" />
                         <h4 className="font-bold text-white text-sm">Select an Applicant</h4>
                         <p className="text-xs text-slate-400 mt-1 max-w-xs">Pick an applicant from the talent pool column to inspect their parsed skills database and technical parameters.</p>
@@ -549,14 +609,14 @@ export default function DashboardCockpit() {
 
               {ingestSuccess && (
                 <div className="flex items-center space-x-3 p-4 bg-emerald-950/20 border border-emerald-900/60 rounded-xl text-emerald-400 text-xs">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
                   <span>{ingestSuccess}</span>
                 </div>
               )}
 
               {ingestError && (
                 <div className="flex items-center space-x-3 p-4 bg-rose-950/20 border border-rose-900/60 rounded-xl text-rose-400 text-xs">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
                   <span>{ingestError}</span>
                 </div>
               )}
@@ -603,7 +663,7 @@ export default function DashboardCockpit() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-900">
                   <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block flex items-center font-mono">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block items-center font-mono">
                       GitHub Username (Optional)
                     </span>
                     <input
@@ -652,7 +712,7 @@ export default function DashboardCockpit() {
                 <button
                   type="submit"
                   disabled={isIngesting}
-                  className="w-full py-2.5 text-xs font-bold text-white bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center active:scale-95 shadow shadow-cyan-500/20"
+                  className="w-full py-2.5 text-xs font-bold text-white bg-linear-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center active:scale-95 shadow shadow-cyan-500/20"
                 >
                   {isIngesting ? (
                     <>
@@ -732,13 +792,13 @@ export default function DashboardCockpit() {
 
               {analyticsError && (
                 <div className="flex items-center space-x-3 p-4 bg-rose-950/20 border border-rose-900/60 rounded-xl text-rose-400 text-sm">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
                   <span>{analyticsError}</span>
                 </div>
               )}
 
               {isLoadingRankings && (
-                <div className="flex flex-col items-center justify-center p-12 glass-panel rounded-xl text-slate-500 min-h-[400px]">
+                <div className="flex flex-col items-center justify-center p-12 glass-panel rounded-xl text-slate-500 min-h-100">
                   <Cpu className="w-12 h-12 text-cyan-400 animate-spin mb-4" />
                   <h3 className="font-bold text-white text-lg">Running GPU Inference Model</h3>
                   <p className="text-xs text-slate-400 mt-2 max-w-sm text-center leading-relaxed">
@@ -790,7 +850,7 @@ export default function DashboardCockpit() {
                                 </div>
                               </div>
 
-                              <div className={`flex flex-col items-end px-2.5 py-1 rounded-lg border ${borderClass} font-mono flex-shrink-0`}>
+                              <div className={`flex flex-col items-end px-2.5 py-1 rounded-lg border ${borderClass} font-mono shrink-0`}>
                                 <span className="text-[10px] text-slate-500 font-semibold uppercase leading-none pb-0.5">Score</span>
                                 <span className="text-xs font-extrabold leading-none">{(ranked.similarity_score * 100).toFixed(0)}%</span>
                               </div>
@@ -808,7 +868,7 @@ export default function DashboardCockpit() {
                           analysis={currentRankedCandidateInfo}
                         />
                       ) : (
-                        <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-[300px]">
+                        <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-75">
                           <Info className="w-10 h-10 mb-3 text-slate-700" />
                           <h4 className="font-bold text-white text-sm">Select Candidate Report</h4>
                           <p className="text-xs text-slate-400 mt-1 max-w-xs">Pick an applicant from the ranked list column to generate custom interview questions.</p>

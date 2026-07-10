@@ -38,7 +38,7 @@ export default function LoginPage() {
 
           {/* Hackathon Authentication Notice */}
           <div className="p-4 rounded-xl border border-cyan-500/20 bg-cyan-950/20 text-cyan-400 text-xxs flex items-start space-x-3 leading-relaxed">
-            <ShieldCheck className="w-5 h-5 flex-shrink-0 text-cyan-400 mt-0.5" />
+            <ShieldCheck className="w-5 h-5 shrink-0 text-cyan-400 mt-0.5" />
             <div>
               <strong className="block text-white pb-0.5">Hackathon Bypass Enabled</strong>
               Authentication is disabled for the hackathon demo. Input any mock credentials or click below to continue.

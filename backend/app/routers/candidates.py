@@ -91,6 +91,17 @@ def get_candidate(candidate_id: str, db: Session = Depends(get_db)):
     return db_cand
 
 
+@router.delete("/candidates/{candidate_id}", response_model=CandidateResponse)
+def delete_candidate(candidate_id: str, db: Session = Depends(get_db)):
+    db_cand = db.query(DBCandidate).filter(DBCandidate.id == candidate_id).first()
+    if not db_cand:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    db.delete(db_cand)
+    db.commit()
+    return db_cand
+
+
 # Protected Demo Seed Endpoint
 @router.post("/demo/seed")
 async def seed_demo_candidates(db: Session = Depends(get_db)):

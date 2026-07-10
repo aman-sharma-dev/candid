@@ -3,12 +3,83 @@ import sys
 import unittest
 from unittest.mock import patch, MagicMock
 
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 # Ensure backend package can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.main import app
+from app.core.db import Base, get_db
+from app.models.models import Candidate as DBCandidate, Job as DBJob
 from app.services.parser import parse_resume_text
 from app.services.intelligence import generate_intelligence_report
 from app.services.github import extract_github_profile
+
+
+class TestApiDeleteEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        self.TestSessionLocal = sessionmaker(bind=self.engine, autocommit=False, autoflush=False)
+        Base.metadata.create_all(bind=self.engine)
+        self.db = self.TestSessionLocal()
+        app.dependency_overrides[get_db] = self._override_get_db
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+        self.db.close()
+        self.engine.dispose()
+
+    def _override_get_db(self):
+        db = self.TestSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    def test_delete_candidate_endpoint(self):
+        candidate = DBCandidate(
+            id="cand-delete-test",
+            name="Delete Me",
+            email="delete@example.com",
+            phone="123",
+            skills=["Python"],
+            experience=["Worked on deletes"],
+            github_username="deleteme",
+            parsed_text="Delete Me",
+            github_data={"username": "deleteme", "public_repos": 3, "followers": 1, "repositories": [], "languages": {}},
+        )
+        self.db.add(candidate)
+        self.db.commit()
+
+        response = self.client.delete("/api/candidates/cand-delete-test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], "cand-delete-test")
+        self.assertIsNone(self.db.query(DBCandidate).filter(DBCandidate.id == "cand-delete-test").first())
+
+    def test_delete_job_endpoint(self):
+        job = DBJob(
+            id="job-delete-test",
+            title="Delete Me Job",
+            description="A job to delete",
+            requirements=["Python"],
+        )
+        self.db.add(job)
+        self.db.commit()
+
+        response = self.client.delete("/api/jobs/job-delete-test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], "job-delete-test")
+        self.assertIsNone(self.db.query(DBJob).filter(DBJob.id == "job-delete-test").first())
 
 
 class TestBackendServices(unittest.IsolatedAsyncioTestCase):

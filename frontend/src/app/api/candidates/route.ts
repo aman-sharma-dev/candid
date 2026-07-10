@@ -42,3 +42,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const candidateId = searchParams.get("id");
+
+    if (!candidateId) {
+      return NextResponse.json({ error: "Missing candidate id" }, { status: 400 });
+    }
+
+    const res = await fetch(`${AMD_BACKEND_URL}/api/candidates/${candidateId}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Backend error (${res.status}): ${errorText || res.statusText}`);
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch (error: unknown) {
+    console.error("Error in DELETE /api/candidates:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -38,3 +38,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const jobId = searchParams.get("id");
+
+    if (!jobId) {
+      return NextResponse.json({ error: "Missing job id" }, { status: 400 });
+    }
+
+    const res = await fetch(`${AMD_BACKEND_URL}/api/jobs/${jobId}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Backend error (${res.status}): ${errorText || res.statusText}`);
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch (error: any) {
+    console.error("Error in DELETE /api/jobs:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
