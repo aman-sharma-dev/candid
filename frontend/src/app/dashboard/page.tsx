@@ -13,7 +13,8 @@ import {
   Sparkles,
   Info,
   FileText,
-  Trash2
+  Trash2,
+  Loader2
 } from "lucide-react";
 
 // Subcomponents
@@ -23,6 +24,7 @@ import GpuDiagnostics from "@/components/GpuDiagnostics";
 import CandidateDetail from "@/components/CandidateDetail";
 import ClusterCohorts from "@/components/ClusterCohorts";
 import AdminConfirmDialog from "@/components/AdminConfirmDialog";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 // TypeScript Interfaces
 interface Job {
@@ -87,6 +89,12 @@ export default function DashboardCockpit() {
   // Seeding
   const [isSeedingDemo, setIsSeedingDemo] = useState<boolean>(false);
   const [demoSeedMessage, setDemoSeedMessage] = useState<string | null>(null);
+  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
+  const [initialDataError, setInitialDataError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [isCreatingJob, setIsCreatingJob] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "job" | "candidate"; id: string; title: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Selection
   const [selectedJobId, setSelectedJobId] = useState<string>("");
@@ -119,59 +127,77 @@ export default function DashboardCockpit() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchJobs = async () => {
-    try {
-      const res = await fetch("/api/jobs");
-      const data = await res.json();
-      if (!data.error) {
-        setJobs(data);
-        if (data.length > 0 && !selectedJobId) {
-          setSelectedJobId(data[0].id);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching jobs:", e);
+    const res = await fetch("/api/jobs");
+    if (!res.ok) {
+      throw new Error("Unable to load job profiles right now.");
     }
+
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error || "Unable to load job profiles.");
+    }
+
+    setJobs(data);
+    if (data.length > 0 && !selectedJobId) {
+      setSelectedJobId(data[0].id);
+    }
+    return data;
   };
 
   const fetchCandidates = async () => {
-    try {
-      const res = await fetch("/api/candidates");
-      const data = await res.json();
-      if (!data.error) {
-        setCandidates(data);
-      }
-    } catch (e) {
-      console.error("Error fetching candidates:", e);
+    const res = await fetch("/api/candidates");
+    if (!res.ok) {
+      throw new Error("Unable to load candidates right now.");
     }
+
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error || "Unable to load candidates.");
+    }
+
+    setCandidates(data);
+    return data;
   };
 
   const fetchSystemStatus = async () => {
-    try {
-      const res = await fetch("/api/status");
-      const data = await res.json();
-      setSystemStatus(data);
-    } catch (e) {
-      console.error("Error fetching status:", e);
+    const res = await fetch("/api/status");
+    if (!res.ok) {
+      throw new Error("Unable to load system diagnostics.");
     }
+
+    const data = await res.json();
+    setSystemStatus(data);
+    return data;
   };
 
   // Fetch initial data
   useEffect(() => {
-  const loadInitialData = async () => {
-    await Promise.all([
-      fetchJobs(),
-      fetchCandidates(),
-      fetchSystemStatus(),
-    ]);
-  };
+    const loadInitialData = async () => {
+      setIsInitialDataLoading(true);
+      setInitialDataError(null);
+      setRequestError(null);
 
-  loadInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+      try {
+        await Promise.all([
+          fetchJobs(),
+          fetchCandidates(),
+          fetchSystemStatus(),
+        ]);
+      } catch (e: any) {
+        setInitialDataError(e.message || "The dashboard could not be loaded.");
+      } finally {
+        setIsInitialDataLoading(false);
+      }
+    };
+
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const triggerDemoSeed = async () => {
     setIsSeedingDemo(true);
     setDemoSeedMessage(null);
+    setRequestError(null);
     try {
       const res = await fetch("/api/demo/seed", {
         method: "POST",
@@ -196,6 +222,7 @@ export default function DashboardCockpit() {
     if (!jobId) return;
     setIsLoadingRankings(true);
     setAnalyticsError(null);
+    setRequestError(null);
     try {
       const res = await fetch(`/api/jobs/${jobId}/rankings`);
       const data = await res.json();
@@ -225,6 +252,7 @@ export default function DashboardCockpit() {
     setIsIngesting(true);
     setIngestError(null);
     setIngestSuccess(null);
+    setRequestError(null);
 
     const formData = new FormData();
     if (file) {
@@ -270,6 +298,9 @@ export default function DashboardCockpit() {
     e.preventDefault();
     if (!newJobTitle || !newJobDescription) return;
 
+    setIsCreatingJob(true);
+    setRequestError(null);
+
     const requirementsArray = newJobRequirements
       .split(",")
       .map((req) => req.trim())
@@ -291,47 +322,58 @@ export default function DashboardCockpit() {
         setNewJobDescription("");
         setNewJobRequirements("");
         setShowAddJobModal(false);
-        fetchJobs();
+        await fetchJobs();
+      } else {
+        setRequestError(data.error || "Unable to create the job profile.");
       }
-    } catch (e) {
-      console.error("Error creating job:", e);
+    } catch (e: any) {
+      setRequestError(e.message || "Error creating job profile.");
+    } finally {
+      setIsCreatingJob(false);
     }
   };
 
-  const handleDeleteJob = async (jobId: string) => {
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    setIsDeleting(true);
+    setRequestError(null);
+
     try {
-      const res = await fetch(`/api/jobs?id=${encodeURIComponent(jobId)}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        deleteTarget.type === "job"
+          ? `/api/jobs?id=${encodeURIComponent(deleteTarget.id)}`
+          : `/api/candidates?id=${encodeURIComponent(deleteTarget.id)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
       const data = await res.json();
-      if (res.ok && !data.error) {
-        setJobs((prev) => prev.filter((job) => job.id !== jobId));
-        if (selectedJobId === jobId) {
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Unable to delete ${deleteTarget.type}.`);
+      }
+
+      if (deleteTarget.type === "job") {
+        setJobs((prev) => prev.filter((job) => job.id !== deleteTarget.id));
+        if (selectedJobId === deleteTarget.id) {
           setSelectedJobId("");
           setRankings([]);
           setClusters([]);
           setActiveRankedCandidateId(null);
         }
-      }
-    } catch (e) {
-      console.error("Error deleting job:", e);
-    }
-  };
-
-  const handleDeleteCandidate = async (candidateId: string) => {
-    try {
-      const res = await fetch(`/api/candidates?id=${encodeURIComponent(candidateId)}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (res.ok && !data.error) {
-        setCandidates((prev) => prev.filter((candidate) => candidate.id !== candidateId));
-        if (selectedCandidate?.id === candidateId) {
+      } else {
+        setCandidates((prev) => prev.filter((candidate) => candidate.id !== deleteTarget.id));
+        if (selectedCandidate?.id === deleteTarget.id) {
           setSelectedCandidate(null);
         }
       }
-    } catch (e) {
-      console.error("Error deleting candidate:", e);
+
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setRequestError(e.message || "Unable to complete that deletion.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -392,500 +434,519 @@ export default function DashboardCockpit() {
         />
 
         <main className="flex-1 overflow-y-auto bg-slate-950/20 p-8">
-          
-          {/* TAB 1: JOB SCREENING PIPELINE */}
-          {activeTab === "jobs" && (
-            <div className="space-y-6 max-w-6xl mx-auto">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">Job Screening Pipeline</h2>
-                  <p className="text-xs text-slate-400 mt-1">Manage semantic job profiles that act as comparison vectors for applicant indexing.</p>
-                </div>
-                <button
-                  onClick={() => setShowAddJobModal(true)}
-                  className="flex items-center px-4 py-2 text-xs font-semibold text-white bg-linear-to-r from-cyan-500 to-cyan-600 rounded-lg hover:from-cyan-600 hover:to-cyan-700 shadow shadow-cyan-500/20 transition active:scale-95"
-                >
-                  <Plus className="w-4 h-4 mr-1.5" /> Add Job Profile
-                </button>
-              </div>
-
-              {demoMode && candidates.length === 0 && (
-                <div className="p-4 rounded-xl border border-cyan-900/30 bg-cyan-950/10 text-cyan-400 flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Info className="w-5 h-5 text-cyan-400" />
-                    <span className="text-xs">
-                      <strong>Demo Seeding Available:</strong> Populating the Talent Pool with seed profiles is recommended before analyzing.
-                    </span>
-                  </div>
-                  <button
-                    onClick={triggerDemoSeed}
-                    disabled={isSeedingDemo}
-                    className="px-3.5 py-1.5 text-xxs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-500 rounded-lg transition disabled:opacity-50"
-                  >
-                    {isSeedingDemo ? "Seeding..." : "Load Demo Candidates"}
-                  </button>
-                </div>
-              )}
-
-              {demoSeedMessage && (
-                <div className="p-3.5 bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-xl flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                  <span>{demoSeedMessage}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                {jobs.map((job) => (
-                  <div key={job.id} className="glass-panel glass-panel-hover p-6 rounded-xl flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <h3 className="text-md font-bold text-white tracking-tight">{job.title}</h3>
-                        <span className="text-xxs px-2 py-0.5 font-mono bg-slate-900 border border-slate-800 text-slate-400 rounded">
-                          {job.id}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-2 line-clamp-3 leading-relaxed">{job.description}</p>
-                      
-                      <div className="mt-4">
-                        <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider block">Comparison Vector Requirements</span>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {job.requirements.map((req, i) => (
-                            <span key={i} className="text-xxs px-2 py-1 bg-slate-900/60 border border-slate-900 text-cyan-400 rounded-md font-mono">
-                              {req}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 pt-4 border-t border-slate-900 flex justify-end space-x-2">
-                      <button
-                        onClick={() => handleDeleteJob(job.id)}
-                        className="flex items-center px-3 py-1.5 text-xxs font-bold text-rose-400 border border-rose-800/40 bg-rose-950/10 hover:bg-rose-950/20 rounded-md transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedJobId(job.id);
-                          setActiveTab("analytics");
-                          runRankingPipeline(job.id);
-                        }}
-                        className="flex items-center px-4 py-1.5 text-xxs font-bold text-cyan-400 border border-cyan-800/40 bg-cyan-950/10 hover:bg-cyan-950/20 rounded-md transition"
-                      >
-                        <Cpu className="w-3.5 h-3.5 mr-1.5" /> Analyze Core Match Rankings
-                      </button>
-                    </div>
-                  </div>
-                ))}
+          {isInitialDataLoading ? (
+            <div className="flex min-h-[60vh] items-center justify-center rounded-2xl border border-slate-900 bg-slate-900/30 p-8">
+              <div className="flex flex-col items-center text-center">
+                <Loader2 className="mb-4 h-8 w-8 animate-spin text-cyan-400" />
+                <h3 className="text-sm font-semibold text-white">Loading dashboard data</h3>
+                <p className="mt-2 max-w-sm text-xs text-slate-400">Fetching jobs, candidates, and system diagnostics so the workspace is ready.</p>
               </div>
             </div>
-          )}
-
-          {/* TAB 2: TALENT POOL DIRECTORY */}
-          {activeTab === "candidates" && (
-            <div className="space-y-6 max-w-6xl mx-auto">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white">Talent Pool Directory</h2>
-                  <p className="text-xs text-slate-400 mt-1 font-sans">Access candidate profiles, identified skill parameters, and parsed documents.</p>
-                </div>
-                {demoMode && (
-                  <button
-                    onClick={triggerDemoSeed}
-                    disabled={isSeedingDemo}
-                    className="flex items-center px-4 py-2 text-xs font-semibold text-white bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-850 transition"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isSeedingDemo ? "animate-spin" : ""}`} /> 
-                    {isSeedingDemo ? "Seeding..." : "Load Demo Talent Seed"}
-                  </button>
-                )}
-              </div>
-
-              {demoSeedMessage && (
-                <div className="p-3.5 bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-xl flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                  <span>{demoSeedMessage}</span>
+          ) : (
+            <div className="space-y-6">
+              {initialDataError && (
+                <div className="mb-6 flex items-start gap-3 rounded-xl border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{initialDataError}</span>
                 </div>
               )}
 
-              {candidates.length === 0 ? (
-                <div className="glass-panel p-12 text-center rounded-xl max-w-lg mx-auto mt-12">
-                  <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                  <h3 className="text-md font-bold text-white">Talent Pool is Empty</h3>
-                  <p className="text-xs text-slate-400 mt-2">Trigger candidate resume ingestion to build the database, or use Demo Mode to seed sample data.</p>
-                  <div className="mt-6 flex justify-center space-x-3">
+              {requestError && (
+                <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-900/60 bg-amber-950/20 p-4 text-sm text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{requestError}</span>
+                </div>
+              )}
+
+              {activeTab === "jobs" && (
+                <div className="mx-auto max-w-6xl space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-white tracking-tight">Job Screening Pipeline</h2>
+                      <p className="mt-1 text-xs text-slate-400">Manage semantic job profiles that act as comparison vectors for applicant indexing.</p>
+                    </div>
                     <button
-                      onClick={() => setActiveTab("ingest")}
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-850 transition"
+                      onClick={() => setShowAddJobModal(true)}
+                      className="flex items-center rounded-lg bg-linear-to-r from-cyan-500 to-cyan-600 px-4 py-2 text-xs font-semibold text-white shadow shadow-cyan-500/20 transition hover:from-cyan-600 hover:to-cyan-700 active:scale-95"
                     >
-                      Ingest Resumes
+                      <Plus className="mr-1.5 h-4 w-4" /> Add Job Profile
                     </button>
-                    {demoMode && (
+                  </div>
+
+                  {demoMode && candidates.length === 0 && (
+                    <div className="flex items-center justify-between rounded-xl border border-cyan-900/30 bg-cyan-950/10 p-4 text-cyan-400">
+                      <div className="flex items-center space-x-3">
+                        <Info className="h-5 w-5 text-cyan-400" />
+                        <span className="text-xs">
+                          <strong>Demo Seeding Available:</strong> Populating the Talent Pool with seed profiles is recommended before analyzing.
+                        </span>
+                      </div>
                       <button
                         onClick={triggerDemoSeed}
-                        className="px-4 py-2 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-500 rounded-lg transition"
+                        disabled={isSeedingDemo}
+                        className="rounded-lg bg-cyan-400 px-3.5 py-1.5 text-xxs font-bold text-slate-950 transition hover:bg-cyan-500 disabled:opacity-50"
                       >
-                        Seed Sample Resumes
+                        {isSeedingDemo ? "Seeding..." : "Load Demo Candidates"}
                       </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Left Column: List of candidates */}
-                  <div className="lg:col-span-1 space-y-3 max-h-[70vh] overflow-y-auto pr-2">
-                    {candidates.map((cand) => (
-                      <div
-                        key={cand.id}
-                        className={`w-full p-4 rounded-xl border transition ${
-                          selectedCandidate?.id === cand.id
-                            ? "bg-slate-900 border-cyan-500/40 text-white shadow-md shadow-cyan-500/5"
-                            : "bg-slate-900/30 border-slate-900/80 hover:bg-slate-900/60 text-slate-300"
-                        }`}
-                      >
-                        <button
-                          onClick={() => setSelectedCandidate(cand)}
-                          className="w-full text-left"
-                        >
-                          <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-xs text-white">{cand.name}</h4>
+                    </div>
+                  )}
+
+                  {demoSeedMessage && (
+                    <div className="flex items-center space-x-2 rounded-xl border border-slate-800 bg-slate-900 p-3.5 text-xs text-slate-200">
+                      <CheckCircle2 className="h-4 w-4 text-cyan-400" />
+                      <span>{demoSeedMessage}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-6 pt-2 md:grid-cols-2">
+                    {jobs.map((job) => (
+                      <div key={job.id} className="glass-panel glass-panel-hover flex flex-col justify-between rounded-xl p-6">
+                        <div>
+                          <div className="flex items-start justify-between">
+                            <h3 className="text-md font-bold tracking-tight text-white">{job.title}</h3>
+                            <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-xxs font-mono text-slate-400">
+                              {job.id}
+                            </span>
                           </div>
-                          <div className="flex flex-col space-y-0.5 mt-2 text-xxs text-slate-500">
-                            {cand.email && <span className="truncate">{cand.email}</span>}
-                            {cand.phone && <span>{cand.phone}</span>}
+                          <p className="mt-2 text-xs leading-relaxed text-slate-400 line-clamp-3">{job.description}</p>
+
+                          <div className="mt-4">
+                            <span className="block text-xxs font-bold uppercase tracking-wider text-slate-500">Comparison Vector Requirements</span>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {job.requirements.map((req, i) => (
+                                <span key={i} className="rounded-md border border-slate-900 bg-slate-900/60 px-2 py-1 text-xxs font-mono text-cyan-400">
+                                  {req}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex flex-wrap gap-1 mt-3">
-                            {cand.skills.slice(0, 3).map((skill, i) => (
-                              <span key={i} className="text-xxs px-2 py-0.5 bg-slate-950 border border-slate-900 rounded text-slate-400">
-                                {skill}
-                              </span>
-                            ))}
-                            {cand.skills.length > 3 && (
-                              <span className="text-xxs px-1.5 py-0.5 text-slate-500 font-bold">
-                                +{cand.skills.length - 3} more
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                        <div className="mt-3 flex justify-end">
+                        </div>
+
+                        <div className="mt-6 flex justify-end space-x-2 border-t border-slate-900 pt-4">
                           <button
-                            onClick={() => handleDeleteCandidate(cand.id)}
-                            className="flex items-center px-3 py-1.5 text-xxs font-bold text-rose-400 border border-rose-800/40 bg-rose-950/10 hover:bg-rose-950/20 rounded-md transition"
+                            onClick={() => setDeleteTarget({ type: "job", id: job.id, title: job.title })}
+                            disabled={isDeleting && deleteTarget?.type === "job" && deleteTarget?.id === job.id}
+                            className="inline-flex items-center justify-center rounded-lg border border-rose-800/50 bg-rose-950/30 px-2.5 py-1.5 text-[11px] font-semibold text-rose-300 transition hover:border-rose-700 hover:bg-rose-950/50 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                            {isDeleting && deleteTarget?.type === "job" && deleteTarget?.id === job.id ? (
+                              <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Deleting...</>
+                            ) : (
+                              <><Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete</>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedJobId(job.id);
+                              setActiveTab("analytics");
+                              runRankingPipeline(job.id);
+                            }}
+                            className="flex items-center rounded-md border border-cyan-800/40 bg-cyan-950/10 px-4 py-1.5 text-xxs font-bold text-cyan-400 transition hover:bg-cyan-950/20"
+                          >
+                            <Cpu className="mr-1.5 h-3.5 w-3.5" /> Analyze Core Match Rankings
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  {/* Right Column: Detailed Candidate View */}
-                  <div className="lg:col-span-2">
-                    {selectedCandidate ? (
-                      <CandidateDetail candidate={selectedCandidate} />
-                    ) : (
-                      <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-75">
-                        <FileText className="w-10 h-10 mb-3 text-slate-700" />
-                        <h4 className="font-bold text-white text-sm">Select an Applicant</h4>
-                        <p className="text-xs text-slate-400 mt-1 max-w-xs">Pick an applicant from the talent pool column to inspect their parsed skills database and technical parameters.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: INGEST CANDIDATES (RESUME PARSER) */}
-          {activeTab === "ingest" && (
-            <div className="max-w-2xl mx-auto space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight text-white">Ingest Candidates</h2>
-                  <p className="text-xs text-slate-400 mt-1">Upload applicant documents, run CPU-bound regex text extraction pipelines, and index technical skills.</p>
-                </div>
-              </div>
-
-              {ingestSuccess && (
-                <div className="flex items-center space-x-3 p-4 bg-emerald-950/20 border border-emerald-900/60 rounded-xl text-emerald-400 text-xs">
-                  <CheckCircle2 className="w-5 h-5 shrink-0" />
-                  <span>{ingestSuccess}</span>
                 </div>
               )}
 
-              {ingestError && (
-                <div className="flex items-center space-x-3 p-4 bg-rose-950/20 border border-rose-900/60 rounded-xl text-rose-400 text-xs">
-                  <AlertTriangle className="w-5 h-5 shrink-0" />
-                  <span>{ingestError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleIngest} className="glass-panel p-6 rounded-xl space-y-6">
-                <div className="space-y-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-mono">Resume Document (PDF)</span>
-                  <div className="border border-dashed border-slate-800 rounded-lg p-6 bg-slate-950/50 hover:bg-slate-900/30 transition flex flex-col items-center justify-center text-center cursor-pointer"
-                       onClick={() => fileInputRef.current?.click()}>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      accept=".pdf"
-                      className="hidden"
-                    />
-                    <UploadCloud className="w-10 h-10 text-cyan-500 mb-3" />
-                    {file ? (
-                      <div className="space-y-1">
-                        <span className="text-sm font-semibold text-white block">{file.name}</span>
-                        <span className="text-xxs text-slate-500 block">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <span className="text-sm font-medium text-slate-300 block">Click to upload resume PDF</span>
-                        <span className="text-xxs text-slate-500 block">Standard text PDFs preferred.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {!file && (
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-mono">Or Paste Resume Content</span>
-                    <textarea
-                      value={textResume}
-                      onChange={(e) => setTextResume(e.target.value)}
-                      placeholder="Paste raw resume text here..."
-                      rows={6}
-                      className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-900 rounded-lg focus:outline-none focus:border-cyan-500 text-slate-200"
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-900">
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block items-center font-mono">
-                      GitHub Username (Optional)
-                    </span>
-                    <input
-                      type="text"
-                      value={githubUsername}
-                      onChange={(e) => setGitHubUsername(e.target.value)}
-                      placeholder="e.g. torvalds"
-                      className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-900 rounded-lg focus:outline-none focus:border-cyan-500 text-slate-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-mono">Manual Name Override (Optional)</span>
-                    <input
-                      type="text"
-                      value={manualName}
-                      onChange={(e) => setManualName(e.target.value)}
-                      placeholder="e.g. Alice Vance"
-                      className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-900 rounded-lg focus:outline-none focus:border-cyan-500 text-slate-200"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-mono">Email Address (Optional)</span>
-                    <input
-                      type="email"
-                      value={manualEmail}
-                      onChange={(e) => setManualEmail(e.target.value)}
-                      placeholder="e.g. alice@example.com"
-                      className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-900 rounded-lg focus:outline-none focus:border-cyan-500 text-slate-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-mono">Phone Number (Optional)</span>
-                    <input
-                      type="text"
-                      value={manualPhone}
-                      onChange={(e) => setManualPhone(e.target.value)}
-                      placeholder="e.g. +1 555-901-2345"
-                      className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-900 rounded-lg focus:outline-none focus:border-cyan-500 text-slate-200"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isIngesting}
-                  className="w-full py-2.5 text-xs font-bold text-white bg-linear-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center active:scale-95 shadow shadow-cyan-500/20"
-                >
-                  {isIngesting ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Ingesting and Parsing Candidate Resume...
-                    </>
-                  ) : (
-                    "Ingest and Register Profile"
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 4: AI MATCHING & ANALYTICS */}
-          {activeTab === "analytics" && (
-            <div className="space-y-6 max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Selector */}
-                <div className="lg:col-span-1 bg-slate-900/30 p-5 border border-slate-900 rounded-xl flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider font-mono">Select Target Job Profile</span>
-                    <select
-                      value={selectedJobId}
-                      onChange={(e) => {
-                        setSelectedJobId(e.target.value);
-                        runRankingPipeline(e.target.value);
-                      }}
-                      className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-900 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500"
-                    >
-                      <option value="">-- Choose Profile --</option>
-                      {jobs.map((job) => (
-                        <option key={job.id} value={job.id}>{job.title}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={() => runRankingPipeline(selectedJobId)}
-                    disabled={isLoadingRankings || !selectedJobId || candidates.length === 0}
-                    className="w-full mt-4 py-2 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow shadow-cyan-500/10 flex items-center justify-center space-x-2 transition"
-                  >
-                    {isLoadingRankings ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" /> Compiling Semantic Match...
-                      </>
-                    ) : (
-                      <>
-                        <Cpu className="w-3.5 h-3.5 mr-1.5" /> Run Match Analysis
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* GPU diagnostics widget - STRICTLY revealed ONLY when Demo Mode is true */}
-                {demoMode ? (
-                  <div className="lg:col-span-2">
-                    <GpuDiagnostics
-                      systemStatus={systemStatus}
-                      isLoading={isLoadingRankings}
-                      batchSize={candidates.length}
-                      stages={pipelineStages}
-                    />
-                  </div>
-                ) : (
-                  <div className="lg:col-span-2 bg-slate-900/20 border border-slate-900 p-5 rounded-xl flex items-center justify-center text-center">
-                    <div className="max-w-xs space-y-2">
-                      <Sparkles className="w-8 h-8 text-cyan-500 mx-auto opacity-50" />
-                      <h4 className="text-xs font-bold text-slate-300">GPU Matching Engine Active</h4>
-                      <p className="text-[10px] text-slate-500 leading-relaxed">
-                        CandidAI is actively using PyTorch models to compare resume vectors. Enable Demo Mode above to inspect active ROCm pipeline registers.
-                      </p>
+              {activeTab === "candidates" && (
+                <div className="mx-auto max-w-6xl space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-white">Talent Pool Directory</h2>
+                      <p className="mt-1 text-xs text-slate-400">Access candidate profiles, identified skill parameters, and parsed documents.</p>
                     </div>
+                    {demoMode && (
+                      <button
+                        onClick={triggerDemoSeed}
+                        disabled={isSeedingDemo}
+                        className="flex items-center rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-850"
+                      >
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isSeedingDemo ? "animate-spin" : ""}`} />
+                        {isSeedingDemo ? "Seeding..." : "Load Demo Talent Seed"}
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {analyticsError && (
-                <div className="flex items-center space-x-3 p-4 bg-rose-950/20 border border-rose-900/60 rounded-xl text-rose-400 text-sm">
-                  <AlertTriangle className="w-5 h-5 shrink-0" />
-                  <span>{analyticsError}</span>
-                </div>
-              )}
-
-              {isLoadingRankings && (
-                <div className="flex flex-col items-center justify-center p-12 glass-panel rounded-xl text-slate-500 min-h-100">
-                  <Cpu className="w-12 h-12 text-cyan-400 animate-spin mb-4" />
-                  <h3 className="font-bold text-white text-lg">Running GPU Inference Model</h3>
-                  <p className="text-xs text-slate-400 mt-2 max-w-sm text-center leading-relaxed">
-                    Computing sentence vectors with BAAI/bge-large-en-v1.5 and generating similarity indexes...
-                  </p>
-                </div>
-              )}
-
-              {!isLoadingRankings && rankings.length === 0 && !analyticsError && (
-                <div className="glass-panel p-12 text-center rounded-xl max-w-lg mx-auto text-slate-500">
-                  <Award className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-                  <h3 className="text-md font-bold text-white">Compare Candidates</h3>
-                  <p className="text-xs text-slate-400 mt-2">Select a screening role to run similarity metrics and examine semantic ranking profiles.</p>
-                  {demoMode && candidates.length === 0 && (
-                    <button
-                      onClick={triggerDemoSeed}
-                      className="mt-6 px-4 py-2 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-500 rounded-lg transition"
-                    >
-                      Pre-populate Candidates First
-                    </button>
+                  {demoSeedMessage && (
+                    <div className="flex items-center space-x-2 rounded-xl border border-slate-800 bg-slate-900 p-3.5 text-xs text-slate-200">
+                      <CheckCircle2 className="h-4 w-4 text-cyan-400" />
+                      <span>{demoSeedMessage}</span>
+                    </div>
                   )}
-                </div>
-              )}
 
-              {!isLoadingRankings && rankings.length > 0 && (
-                <div className="space-y-8">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column: Ranked Candidates */}
-                    <div className="lg:col-span-1 space-y-3">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block font-mono">Match Matrix Rankings</span>
-                      <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                        {rankings.map((ranked, index) => {
-                          const borderClass = getScoreColorClass(ranked.similarity_score);
-                          return (
-                            <button
-                              key={ranked.candidate_id}
-                              onClick={() => setActiveRankedCandidateId(ranked.candidate_id)}
-                              className={`w-full text-left p-3.5 rounded-xl border flex items-center justify-between transition ${
-                                activeRankedCandidateId === ranked.candidate_id
-                                  ? "bg-slate-900 border-cyan-500/40 text-white"
-                                  : "bg-slate-900/30 border-slate-900 text-slate-400 hover:bg-slate-900/50"
-                              }`}
-                            >
-                              <div className="flex items-center space-x-3 truncate mr-2">
-                                <span className="font-mono text-xs font-bold text-slate-600 w-5">#{index + 1}</span>
-                                <div className="truncate">
-                                  <h4 className="font-bold text-xs text-slate-200 truncate">{ranked.candidate_name}</h4>
-                                  <span className="text-xxs text-slate-500 font-mono uppercase tracking-widest">{ranked.candidate_id}</span>
-                                </div>
+                  {candidates.length === 0 ? (
+                    <div className="glass-panel mx-auto mt-12 max-w-lg rounded-xl p-12 text-center">
+                      <Users className="mx-auto mb-4 h-12 w-12 text-slate-600" />
+                      <h3 className="text-md font-bold text-white">Talent Pool is Empty</h3>
+                      <p className="mt-2 text-xs text-slate-400">Trigger candidate resume ingestion to build the database, or use Demo Mode to seed sample data.</p>
+                      <div className="mt-6 flex justify-center space-x-3">
+                        <button
+                          onClick={() => setActiveTab("ingest")}
+                          className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-850"
+                        >
+                          Ingest Resumes
+                        </button>
+                        {demoMode && (
+                          <button
+                            onClick={triggerDemoSeed}
+                            className="rounded-lg bg-cyan-400 px-4 py-2 text-xs font-bold text-slate-950 transition hover:bg-cyan-500"
+                          >
+                            Seed Sample Resumes
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+                      <div className="space-y-3 pr-2 lg:col-span-1">
+                        {candidates.map((cand) => (
+                          <div
+                            key={cand.id}
+                            className={`w-full rounded-xl border p-4 transition ${
+                              selectedCandidate?.id === cand.id
+                                ? "border-cyan-500/40 bg-slate-900 text-white shadow-md shadow-cyan-500/5"
+                                : "border-slate-900/80 bg-slate-900/30 text-slate-300 hover:bg-slate-900/60"
+                            }`}
+                          >
+                            <button onClick={() => setSelectedCandidate(cand)} className="w-full text-left">
+                              <div className="flex items-start justify-between">
+                                <h4 className="text-xs font-bold text-white">{cand.name}</h4>
                               </div>
-
-                              <div className={`flex flex-col items-end px-2.5 py-1 rounded-lg border ${borderClass} font-mono shrink-0`}>
-                                <span className="text-[10px] text-slate-500 font-semibold uppercase leading-none pb-0.5">Score</span>
-                                <span className="text-xs font-extrabold leading-none">{(ranked.similarity_score * 100).toFixed(0)}%</span>
+                              <div className="mt-2 flex flex-col space-y-0.5 text-xxs text-slate-500">
+                                {cand.email && <span className="truncate">{cand.email}</span>}
+                                {cand.phone && <span>{cand.phone}</span>}
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-1">
+                                {cand.skills.slice(0, 3).map((skill, i) => (
+                                  <span key={i} className="rounded border border-slate-900 bg-slate-950 px-2 py-0.5 text-xxs text-slate-400">
+                                    {skill}
+                                  </span>
+                                ))}
+                                {cand.skills.length > 3 && (
+                                  <span className="px-1.5 py-0.5 text-xxs font-bold text-slate-500">
+                                    +{cand.skills.length - 3} more
+                                  </span>
+                                )}
                               </div>
                             </button>
-                          );
-                        })}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                onClick={() => setDeleteTarget({ type: "candidate", id: cand.id, title: cand.name })}
+                                disabled={isDeleting && deleteTarget?.type === "candidate" && deleteTarget?.id === cand.id}
+                                className="inline-flex items-center justify-center rounded-lg border border-rose-800/50 bg-rose-950/30 px-2.5 py-1.5 text-[11px] font-semibold text-rose-300 transition hover:border-rose-700 hover:bg-rose-950/50 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {isDeleting && deleteTarget?.type === "candidate" && deleteTarget?.id === cand.id ? (
+                                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Deleting...</>
+                                ) : (
+                                  <><Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete</>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="lg:col-span-2">
+                        {selectedCandidate ? (
+                          <CandidateDetail candidate={selectedCandidate} />
+                        ) : (
+                          <div className="glass-panel flex h-full min-h-75 flex-col items-center justify-center rounded-xl p-12 text-center text-slate-500">
+                            <FileText className="mb-3 h-10 w-10 text-slate-700" />
+                            <h4 className="text-sm font-bold text-white">Select an Applicant</h4>
+                            <p className="mt-1 max-w-xs text-xs text-slate-400">Pick an applicant from the talent pool column to inspect their parsed skills database and technical parameters.</p>
+                          </div>
+                        )}
                       </div>
                     </div>
+                  )}
+                </div>
+              )}
 
-                    {/* Right Column: Intelligence report */}
-                    <div className="lg:col-span-2">
-                      {currentRankedCandidateInfo && currentRankedCandidateDetails ? (
-                        <CandidateDetail
-                          candidate={currentRankedCandidateDetails}
-                          analysis={currentRankedCandidateInfo}
-                        />
-                      ) : (
-                        <div className="glass-panel p-12 text-center rounded-xl text-slate-500 flex flex-col items-center justify-center h-full min-h-75">
-                          <Info className="w-10 h-10 mb-3 text-slate-700" />
-                          <h4 className="font-bold text-white text-sm">Select Candidate Report</h4>
-                          <p className="text-xs text-slate-400 mt-1 max-w-xs">Pick an applicant from the ranked list column to generate custom interview questions.</p>
-                        </div>
-                      )}
+              {activeTab === "ingest" && (
+                <div className="mx-auto max-w-2xl space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold tracking-tight text-white">Ingest Candidates</h2>
+                      <p className="mt-1 text-xs text-slate-400">Upload applicant documents, run CPU-bound regex text extraction pipelines, and index technical skills.</p>
                     </div>
                   </div>
 
-                  {/* K-Means Cohorts */}
-                  {clusters.length > 0 && (
-                    <ClusterCohorts clusters={clusters} candidates={candidates} />
+                  {ingestSuccess && (
+                    <div className="flex items-center space-x-3 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4 text-xs text-emerald-400">
+                      <CheckCircle2 className="h-5 w-5 shrink-0" />
+                      <span>{ingestSuccess}</span>
+                    </div>
+                  )}
+
+                  {ingestError && (
+                    <div className="flex items-center space-x-3 rounded-xl border border-rose-900/60 bg-rose-950/20 p-4 text-xs text-rose-400">
+                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                      <span>{ingestError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleIngest} className="glass-panel space-y-6 rounded-xl p-6">
+                    <div className="space-y-2">
+                      <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Resume Document (PDF)</span>
+                      <div className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-6 text-center transition hover:bg-slate-900/30"
+                           onClick={() => fileInputRef.current?.click()}>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={(e) => setFile(e.target.files?.[0] || null)}
+                          accept=".pdf"
+                          className="hidden"
+                        />
+                        <UploadCloud className="mb-3 h-10 w-10 text-cyan-500" />
+                        {file ? (
+                          <div className="space-y-1">
+                            <span className="block text-sm font-semibold text-white">{file.name}</span>
+                            <span className="block text-xxs text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <span className="block text-sm font-medium text-slate-300">Click to upload resume PDF</span>
+                            <span className="block text-xxs text-slate-500">Standard text PDFs preferred.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {!file && (
+                      <div className="space-y-2">
+                        <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Or Paste Resume Content</span>
+                        <textarea
+                          value={textResume}
+                          onChange={(e) => setTextResume(e.target.value)}
+                          placeholder="Paste raw resume text here..."
+                          rows={6}
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-6 border-t border-slate-900 pt-2 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <span className="block items-center text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+                          GitHub Username (Optional)
+                        </span>
+                        <input
+                          type="text"
+                          value={githubUsername}
+                          onChange={(e) => setGitHubUsername(e.target.value)}
+                          placeholder="e.g. torvalds"
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3.5 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Manual Name Override (Optional)</span>
+                        <input
+                          type="text"
+                          value={manualName}
+                          onChange={(e) => setManualName(e.target.value)}
+                          placeholder="e.g. Alice Vance"
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3.5 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Email Address (Optional)</span>
+                        <input
+                          type="email"
+                          value={manualEmail}
+                          onChange={(e) => setManualEmail(e.target.value)}
+                          placeholder="e.g. alice@example.com"
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3.5 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Phone Number (Optional)</span>
+                        <input
+                          type="text"
+                          value={manualPhone}
+                          onChange={(e) => setManualPhone(e.target.value)}
+                          placeholder="e.g. +1 555-901-2345"
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3.5 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isIngesting}
+                      className="flex w-full items-center justify-center rounded-lg bg-linear-to-r from-cyan-500 to-cyan-600 px-4 py-2.5 text-xs font-bold text-white shadow shadow-cyan-500/20 transition hover:from-cyan-600 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                    >
+                      {isIngesting ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Ingesting and Parsing Candidate Resume...
+                        </>
+                      ) : (
+                        "Ingest and Register Profile"
+                      )}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {activeTab === "analytics" && (
+                <div className="mx-auto max-w-6xl space-y-6">
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                    <div className="flex flex-col justify-between rounded-xl border border-slate-900 bg-slate-900/30 p-5 lg:col-span-1">
+                      <div className="space-y-2">
+                        <span className="text-xxs font-bold uppercase tracking-wider text-slate-500 font-mono">Select Target Job Profile</span>
+                        <select
+                          value={selectedJobId}
+                          onChange={(e) => {
+                            setSelectedJobId(e.target.value);
+                            runRankingPipeline(e.target.value);
+                          }}
+                          className="w-full rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                        >
+                          <option value="">-- Choose Profile --</option>
+                          {jobs.map((job) => (
+                            <option key={job.id} value={job.id}>{job.title}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        onClick={() => runRankingPipeline(selectedJobId)}
+                        disabled={isLoadingRankings || !selectedJobId || candidates.length === 0}
+                        className="mt-4 flex w-full items-center justify-center space-x-2 rounded-lg bg-cyan-400 px-4 py-2 text-xs font-bold text-slate-950 shadow shadow-cyan-500/10 transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isLoadingRankings ? (
+                          <>
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Compiling Semantic Match...
+                          </>
+                        ) : (
+                          <>
+                            <Cpu className="mr-1.5 h-3.5 w-3.5" /> Run Match Analysis
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {demoMode ? (
+                      <div className="lg:col-span-2">
+                        <GpuDiagnostics
+                          systemStatus={systemStatus}
+                          isLoading={isLoadingRankings}
+                          batchSize={candidates.length}
+                          stages={pipelineStages}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center rounded-xl border border-slate-900 bg-slate-900/20 p-5 text-center lg:col-span-2">
+                        <div className="max-w-xs space-y-2">
+                          <Sparkles className="mx-auto h-8 w-8 text-cyan-500 opacity-50" />
+                          <h4 className="text-xs font-bold text-slate-300">GPU Matching Engine Active</h4>
+                          <p className="text-[10px] leading-relaxed text-slate-500">
+                            CandidAI is actively using PyTorch models to compare resume vectors. Enable Demo Mode above to inspect active ROCm pipeline registers.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {analyticsError && (
+                    <div className="flex items-center space-x-3 rounded-xl border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-400">
+                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                      <span>{analyticsError}</span>
+                    </div>
+                  )}
+
+                  {isLoadingRankings && (
+                    <div className="glass-panel flex min-h-100 flex-col items-center justify-center rounded-xl p-12 text-slate-500">
+                      <Cpu className="mb-4 h-12 w-12 animate-spin text-cyan-400" />
+                      <h3 className="text-lg font-bold text-white">Running GPU Inference Model</h3>
+                      <p className="mt-2 max-w-sm text-center text-xs leading-relaxed text-slate-400">
+                        Computing sentence vectors with BAAI/bge-large-en-v1.5 and generating similarity indexes...
+                      </p>
+                    </div>
+                  )}
+
+                  {!isLoadingRankings && rankings.length === 0 && !analyticsError && (
+                    <div className="glass-panel mx-auto max-w-lg rounded-xl p-12 text-center text-slate-500">
+                      <Award className="mx-auto mb-4 h-12 w-12 text-slate-700" />
+                      <h3 className="text-md font-bold text-white">Compare Candidates</h3>
+                      <p className="mt-2 text-xs text-slate-400">Select a screening role to run similarity metrics and examine semantic ranking profiles.</p>
+                      {demoMode && candidates.length === 0 && (
+                        <button
+                          onClick={triggerDemoSeed}
+                          className="mt-6 rounded-lg bg-cyan-400 px-4 py-2 text-xs font-bold text-slate-950 transition hover:bg-cyan-500"
+                        >
+                          Pre-populate Candidates First
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {!isLoadingRankings && rankings.length > 0 && (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+                        <div className="space-y-3 lg:col-span-1">
+                          <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 font-mono">Match Matrix Rankings</span>
+                          <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+                            {rankings.map((ranked, index) => {
+                              const borderClass = getScoreColorClass(ranked.similarity_score);
+                              return (
+                                <button
+                                  key={ranked.candidate_id}
+                                  onClick={() => setActiveRankedCandidateId(ranked.candidate_id)}
+                                  className={`flex w-full items-center justify-between rounded-xl border p-3.5 text-left transition ${
+                                    activeRankedCandidateId === ranked.candidate_id
+                                      ? "border-cyan-500/40 bg-slate-900 text-white"
+                                      : "border-slate-900 bg-slate-900/30 text-slate-400 hover:bg-slate-900/50"
+                                  }`}
+                                >
+                                  <div className="mr-2 flex items-center space-x-3 truncate">
+                                    <span className="w-5 font-mono text-xs font-bold text-slate-600">#{index + 1}</span>
+                                    <div className="truncate">
+                                      <h4 className="truncate text-xs font-bold text-slate-200">{ranked.candidate_name}</h4>
+                                      <span className="text-xxs font-mono uppercase tracking-widest text-slate-500">{ranked.candidate_id}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className={`flex shrink-0 flex-col items-end rounded-lg border px-2.5 py-1 font-mono ${borderClass}`}>
+                                    <span className="pb-0.5 text-[10px] font-semibold uppercase leading-none text-slate-500">Score</span>
+                                    <span className="text-xs font-extrabold leading-none">{(ranked.similarity_score * 100).toFixed(0)}%</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="lg:col-span-2">
+                          {currentRankedCandidateInfo && currentRankedCandidateDetails ? (
+                            <CandidateDetail
+                              candidate={currentRankedCandidateDetails}
+                              analysis={currentRankedCandidateInfo}
+                            />
+                          ) : (
+                            <div className="glass-panel flex h-full min-h-75 flex-col items-center justify-center rounded-xl p-12 text-center text-slate-500">
+                              <Info className="mb-3 h-10 w-10 text-slate-700" />
+                              <h4 className="text-sm font-bold text-white">Select Candidate Report</h4>
+                              <p className="mt-1 max-w-xs text-xs text-slate-400">Pick an applicant from the ranked list column to generate custom interview questions.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {clusters.length > 0 && (
+                        <ClusterCohorts clusters={clusters} candidates={candidates} />
+                      )}
+                    </div>
                   )}
                 </div>
               )}
             </div>
           )}
-
         </main>
       </div>
 
@@ -952,15 +1013,36 @@ export default function DashboardCockpit() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold text-white bg-cyan-500 hover:bg-cyan-600 rounded-lg shadow shadow-cyan-500/10 transition"
+                  disabled={isCreatingJob}
+                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold text-white bg-cyan-500 hover:bg-cyan-600 rounded-lg shadow shadow-cyan-500/10 transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Create Profile
+                  {isCreatingJob ? (
+                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating...</>
+                  ) : (
+                    "Create Profile"
+                  )}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        title={deleteTarget?.type === "job" ? "Delete job profile?" : "Delete candidate profile?"}
+        description={
+          deleteTarget?.type === "job"
+            ? `This will remove "${deleteTarget.title}" from the dashboard. This action cannot be undone.`
+            : `This will remove "${deleteTarget?.title}" from the talent pool. This action cannot be undone.`
+        }
+        confirmLabel="Delete"
+        cancelLabel="Keep it"
+        destructive
+        isConfirming={isDeleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
 
       {/* Confirmation Dialog Modal */}
       <AdminConfirmDialog
