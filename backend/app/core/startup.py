@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from app.core.db import engine, Base
-from app.core.gpu_init import device_info, device
 
 logger = logging.getLogger("Startup")
 

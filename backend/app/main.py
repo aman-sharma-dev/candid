@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import AsyncGenerator
 
-from app.core.gpu_init import device_info
+from app.core.gpu_init import initialize_device
 from app.core.startup import create_tables, warmup_gpu_async
 from app.routers import jobs, candidates, analytics
 
@@ -18,11 +18,13 @@ logger = logging.getLogger("FastAPI-Server")
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Initialize database
+    current_device_info = initialize_device()
+
     logger.info("Initializing CandidAI Systems...")
-    logger.info(f"GPU Diagnostics on Startup:")
-    logger.info(f"  - GPU Available: {str(device_info['gpu_available']).lower()}")
-    logger.info(f"  - PyTorch Device: {device_info['device']}")
-    logger.info(f"  - Hardware Info: {device_info['gpu_name']}")
+    logger.info("GPU Diagnostics on Startup:")
+    logger.info(f"  - GPU Available: {str(current_device_info['gpu_available']).lower()}")
+    logger.info(f"  - PyTorch Device: {current_device_info['device']}")
+    logger.info(f"  - Hardware Info: {current_device_info['gpu_name']}")
 
     # Auto-create DB tables
     create_tables()
@@ -60,4 +62,4 @@ app.include_router(analytics.router)
 
 @app.get("/api/status")
 async def get_status():
-    return device_info
+    return initialize_device()

@@ -5,7 +5,7 @@ import re
 from collections import Counter
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Tuple
-from app.core.gpu_init import device
+from app.core.gpu_init import get_device
 
 logger = logging.getLogger("EmbeddingService")
 
@@ -17,9 +17,10 @@ def get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         model_name = "BAAI/bge-large-en-v1.5"
-        logger.info(f"Loading SentenceTransformer model '{model_name}' on device '{device}'...")
+        current_device = get_device()
+        logger.info(f"Loading SentenceTransformer model '{model_name}' on device '{current_device}'...")
         # HuggingFace will automatically cache this under HF_HOME
-        _model = SentenceTransformer(model_name, device=device)
+        _model = SentenceTransformer(model_name, device=current_device)
         logger.info("Model loaded successfully.")
     return _model
 
@@ -30,8 +31,9 @@ def generate_embeddings(texts: List[str]) -> torch.Tensor:
     Runs on GPU if available.
     """
     model = get_model()
+    current_device = get_device()
     # model.encode returns a numpy array or torch.Tensor depending on convert_to_tensor
-    embeddings = model.encode(texts, convert_to_tensor=True, device=device)
+    embeddings = model.encode(texts, convert_to_tensor=True, device=current_device)
     return embeddings
 
 
@@ -108,7 +110,8 @@ def cluster_candidates(candidate_ids: List[str], candidate_texts: List[str], k: 
     if k <= 0:
         return []
 
-    logger.info(f"Clustering {len(candidate_ids)} candidates into {k} groups on device '{device}'...")
+    current_device = get_device()
+    logger.info(f"Clustering {len(candidate_ids)} candidates into {k} groups on device '{current_device}'...")
     embeddings = generate_embeddings(candidate_texts)
 
     labels, centroids = perform_pytorch_kmeans(embeddings, k)

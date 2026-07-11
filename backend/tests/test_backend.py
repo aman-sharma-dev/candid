@@ -13,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.main import app
 from app.core.db import Base, get_db
+from app.core import gpu_init
 from app.models.models import Candidate as DBCandidate, Job as DBJob
 from app.services.parser import parse_resume_text
 from app.services.intelligence import generate_intelligence_report
@@ -80,6 +81,21 @@ class TestApiDeleteEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["id"], "job-delete-test")
         self.assertIsNone(self.db.query(DBJob).filter(DBJob.id == "job-delete-test").first())
+
+
+class TestGpuInitialization(unittest.TestCase):
+
+    @patch("app.core.gpu_init.torch.cuda.is_available", side_effect=[True, False, False])
+    @patch("app.core.gpu_init.torch.cuda.get_device_name")
+    def test_gpu_detection_refreshes_on_each_call(self, mock_get_device_name, mock_is_available):
+        mock_get_device_name.return_value = "NVIDIA H100"
+
+        first_info = gpu_init.initialize_device()
+        second_info = gpu_init.initialize_device()
+
+        self.assertEqual(first_info["device"], "cuda")
+        self.assertEqual(second_info["device"], "cpu")
+        self.assertEqual(gpu_init.get_device(), "cpu")
 
 
 class TestBackendServices(unittest.IsolatedAsyncioTestCase):
