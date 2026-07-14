@@ -1,134 +1,321 @@
 # CandidAI | Candidate Intelligence Dashboard
 
-CandidAI is an enterprise SaaS recruitment screening and candidate intelligence platform optimized for **AMD Developer Cloud GPUs**. The system utilizes high-dimensional semantic search and vector space clustering to rank and cohort applicants against targeted job descriptions in real time.
+CandidAI is an AI-powered candidate intelligence platform that helps solo founders and early-stage startups identify the strongest technical candidates using semantic search instead of traditional keyword matching.
+
+The platform combines **semantic embeddings**, **GPU-accelerated inference**, **GitHub enrichment**, and **AI-generated interview questions** to automate technical candidate evaluation while maintaining a production-oriented architecture.
 
 ---
 
-## Architecture Diagram
+# Overview
+
+Unlike traditional Applicant Tracking Systems, CandidAI treats candidate ranking as a **semantic retrieval problem** rather than a text generation problem.
+
+Instead of using a Large Language Model for ranking, CandidAI uses the **BAAI/bge-large-en-v1.5** embedding model to compare job descriptions and candidate profiles in vector space.
+
+Generative AI is only used where it adds value:
+- Interview Question Generation
+
+---
+
+# Architecture
 
 ```mermaid
 graph TD
-    Client[Browser UI - Client Layer] <-->|NextJS API Routes BFF Proxy| NextJS[Next.js Server - BFF Security Boundary]
-    
-    subgraph Private AMD GPU VM Network
-        NextJS <-->|Server-to-Server Private Fetch / AMD_BACKEND_URL| FastAPI[FastAPI Backend - Port 8000]
-        
-        subgraph GPU Compute Environment
-            FastAPI <--> PyTorch[PyTorch ROCm / CUDA]
-            PyTorch <--> ST[SentenceTransformer BAAI/bge-large-en-v1.5]
-            PyTorch <--> KMeans[GPU K-Means Clustering]
-        end
-        
-        FastAPI <--> SQL[Neon PostgreSQL Database]
-    end
-    
-    FastAPI -->|Rate-Limited CPU Fetch| GitHub[GitHub API]
+
+Browser["Browser"]
+
+Browser --> NextUI["Next.js Dashboard"]
+
+NextUI --> BFF["Next.js API Routes (BFF)"]
+
+BFF --> FastAPI["Dockerized FastAPI Backend"]
+
+FastAPI --> Embeddings["BAAI / bge-large-en-v1.5"]
+
+Embeddings --> PyTorch["PyTorch"]
+
+PyTorch --> GPU["AMD ROCm / NVIDIA CUDA"]
+
+FastAPI --> PostgreSQL["Neon PostgreSQL"]
+
+FastAPI --> GitHub["GitHub API"]
 ```
 
 ---
 
-## Key Features
+# Why Embeddings Instead of an LLM?
 
-1. **High-Dimensional Match Matrix**: Evaluates multi-dimensional semantic alignment scores using `BAAI/bge-large-en-v1.5` embeddings on AMD GPUs.
-2. **GPU Cohort Clustering**: Groups applicant profiles into technical talent groups using a PyTorch-based K-Means clustering algorithm compiled directly on the GPU.
-3. **CPU Document Ingestion**: Parses PDFs on the CPU, isolating email, phone, experiences, and technical vocabulary tags.
-4. **Failsafe GitHub Profiling**: Extracts open-source repository descriptions, languages, and star metrics. If rate-limits are hit, logs are written internally and a clean mock profile is returned to keep the demo flow fully operational.
-5. **Secure Next.js BFF Architecture**: The browser never directly interacts with port 8000 or the FastAPI VM URL. All communication is routed through server-to-server App Router API routes using `AMD_BACKEND_URL`.
-6. **Performance Warm Start**: On server boot, PyTorch asynchronously pre-loads model weights and processes a warmup batch on the GPU, avoiding cold start lag during judging.
-7. **Toggleable Demo Mode**: A secured toggle switch in the dashboard allows administrators to reveal diagnostic panels (timings, vector batch sizes, device type) and seed the DB with realistic candidates.
+Candidate ranking is fundamentally a **retrieval problem—not a generative AI problem.**
+
+Instead of sending resumes through a Large Language Model, CandidAI generates semantic embeddings and performs vector similarity search.
+
+Benefits:
+
+- Deterministic rankings
+- Lower inference latency
+- Lower GPU memory usage
+- Lower deployment cost
+- No hallucinations
+- Better suited for semantic similarity
+
+Large Language Models are reserved for generating personalized interview questions.
 
 ---
 
-## Repository Structure
+# Features
+
+- Semantic candidate ranking using BAAI/bge-large-en-v1.5
+- GPU accelerated embedding generation
+- Candidate clustering using GPU K-Means
+- GitHub profile enrichment
+- AI-generated interview questions
+- Dockerized inference backend
+- AMD ROCm deployment support
+- NVIDIA CUDA support
+- Secure Next.js Backend-for-Frontend architecture
+- Toggleable Demo Mode
+- GPU Diagnostics panel
+
+---
+
+# Tech Stack
+
+## Frontend
+
+- Next.js (App Router)
+- React
+- TypeScript
+- Tailwind CSS
+- Lucide Icons
+
+## Backend
+
+- FastAPI
+- PyTorch
+- SentenceTransformers
+- SQLAlchemy
+- Pydantic
+- uv
+
+## AI
+
+- BAAI/bge-large-en-v1.5
+- Semantic Embeddings
+- GPU K-Means Clustering
+
+## Database
+
+- Neon PostgreSQL
+
+## Infrastructure
+
+- Docker
+- AMD ROCm
+- NVIDIA CUDA
+
+---
+
+# Repository Structure
 
 ```text
+candid/
+│
 ├── backend/
-│   ├── main.py              # FastAPI app and startup warmups
-│   ├── config.py            # Settings loaded from environment variables
-│   ├── db.py                # SQLAlchemy DB engine and Session Pools
-│   ├── models.py            # Job and Candidate schemas mapped to PostgreSQL
-│   ├── schemas.py           # Pydantic validation schemas
-│   ├── test_backend.py      # Python backend unit tests
-│   ├── Dockerfile.local     # Local CUDA developer container
-│   ├── Dockerfile.production# AMD ROCm Cloud production container
-│   ├── pyproject.toml       # UV package manager definition
-│   └── services/            # Embedding, parser, github, and intelligence modules
+│   ├── app/
+│   │   ├── api/
+│   │   ├── services/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── config/
+│   │   └── main.py
+│   │
+│   ├── Dockerfile.local
+│   ├── Dockerfile.production
+│   ├── pyproject.toml
+│   ├── uv.lock
+│   └── .env.example
+│
 ├── frontend/
-│   ├── src/app/             # Next.js App Router (Landing, Login, Dashboard, BFF)
-│   ├── src/components/      # Reusable React components (Header, Sidebar, GPU Diagnostics)
-│   ├── src/styles/          # Dedicated CSS styling
-│   └── package.json         # NPM package dependencies
-└── README.md                # Root project documentation
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   └── .env.example
+│
+└── README.md
 ```
 
 ---
 
-## Environment Variables
+# Environment Variables
 
-Configure these settings via your `.env` or VM environments:
+## Frontend
 
-### Next.js BFF Server (`/frontend`)
-* `AMD_BACKEND_URL`: Private endpoint of the FastAPI VM (e.g. `http://fastapi-vm:8000` or `http://localhost:8000`). **Never exposed to the client.**
-
-### FastAPI Backend (`/backend`)
-* `DATABASE_URL`: Connection string for **Neon PostgreSQL** database.
-* `DEMO_MODE`: Set to `true` (default) to enable the protected `/api/demo/seed` routing.
-* `HF_HOME`: Storage directory for HuggingFace caching (`/root/.cache/huggingface`).
+```env
+AMD_BACKEND_URL=http://localhost:8000
+```
 
 ---
 
-## Local Setup
+## Backend
 
-### Prereqs
-* Python >= 3.10 and Node.js >= 18.
-* [uv](https://github.com/astral-sh/uv) (recommended Python manager).
+```env
+DATABASE_URL=
 
-### 1. Run the Python FastAPI Backend
+DEMO_MODE=true
+
+HF_HOME=/root/.cache/huggingface
+
+TORCH_HOME=/root/.cache/torch
+```
+
+---
+
+# Local Development
+
+## Backend
+
 ```bash
 cd backend
-# Synchronize environment dependencies
+
 uv sync
-# Activate virtual environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-# Start Uvicorn
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# Windows
+.venv\Scripts\activate
+
+# Linux/macOS
+source .venv/bin/activate
+
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 2. Run the Next.js Frontend BFF
+---
+
+## Frontend
+
 ```bash
-cd ../frontend
-# Install NPM dependencies
+cd frontend
+
 npm install
-# Start local dev server
+
 npm run dev
 ```
-Open `http://localhost:3000` to view the SaaS Landing Page.
 
----
+Application:
 
-## Docker Usage
-
-Build and deploy using localized GPU configurations:
-
-### Nvidia Local CUDA Run (RTX 4060)
-```bash
-cd backend
-docker build -f Dockerfile.local -t candid-backend-cuda .
-docker run --gpus all -p 8000:8000 -v hf_cache:/root/.cache/huggingface -e DATABASE_URL="your-neon-url" candid-backend-cuda
 ```
-
-### AMD Instinct GPU Cloud Run (ROCm)
-```bash
-cd backend
-docker build -f Dockerfile.production -t candid-backend-rocm .
-docker run --device=/dev/kfd --device=/dev/dri -p 8000:8000 -v hf_cache:/root/.cache/huggingface -e DATABASE_URL="your-neon-url" candid-backend-rocm
+http://localhost:3000
 ```
 
 ---
 
-## Technology Stack
+# Local Docker (CUDA)
 
-* **Frontend**: Next.js (App Router, BFF architecture), React, TypeScript, Tailwind CSS, Lucide icons.
-* **Backend**: FastAPI (Python), PyTorch (ROCm & CUDA capability), SentenceTransformers (`BAAI/bge-large-en-v1.5`), SQLAlchemy ORM, Pydantic validation.
-* **Database**: Neon Serverless PostgreSQL.
-* **Orchestration**: uv (Python packages), Docker containers.
+Build
+
+```bash
+docker build \
+-f backend/Dockerfile.production \
+-t candid-backend \
+backend
+```
+
+Run
+
+```bash
+docker run --rm \
+--gpus all \
+-p 8000:8000 \
+--env-file backend/.env.local \
+--name candid-backend \
+candid-backend
+```
+
+---
+
+# AMD ROCm Deployment
+
+Build
+
+```bash
+docker build \
+-f backend/Dockerfile.production \
+-t candid-backend \
+backend
+```
+
+Run
+
+```bash
+docker run \
+--device=/dev/kfd \
+--device=/dev/dri \
+--group-add video \
+-p 8000:8000 \
+--env-file backend/.env \
+candid-backend
+```
+
+---
+
+# API
+
+Swagger UI
+
+```
+http://localhost:8000/docs
+```
+
+OpenAPI
+
+```
+http://localhost:8000/openapi.json
+```
+
+---
+
+# Production Design
+
+The browser never communicates directly with the inference backend.
+
+All requests follow the flow:
+
+```
+Browser
+
+↓
+
+Next.js Dashboard
+
+↓
+
+Next.js API Routes (BFF)
+
+↓
+
+FastAPI Inference Service
+
+↓
+
+GPU
+```
+
+This keeps the inference endpoint private while allowing independent scaling of the frontend and backend.
+
+---
+
+# AMD GPU Deployment
+
+The inference backend has been successfully deployed on:
+
+- AMD Instinct MI300X
+- ROCm
+- PyTorch ROCm
+- Docker
+
+The same application also runs locally on NVIDIA CUDA with minimal configuration changes.
+
+---
+
+# License
+
+Created for the **AMD Developer Challenge Act II**.

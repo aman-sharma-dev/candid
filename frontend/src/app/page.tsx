@@ -64,53 +64,7 @@ export default function SaaSLandingPage() {
           </div>
         </div>
 
-        {/* Hero Interactive Mock Stats */}
-        <div className="w-full max-w-lg bg-gradient-to-b from-slate-900/50 to-slate-950 border border-slate-900 p-6 rounded-2xl space-y-6 shadow-2xl">
-          <div className="flex justify-between items-center border-b border-slate-900 pb-3">
-            <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider font-mono">Accelerator Benchmarks</span>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              <span className="text-[10px] text-cyan-400 font-mono font-bold">GPU_READY</span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="flex justify-between text-xxs font-mono">
-                <span className="text-slate-400">AMD Instinct GPU (Vector Inference)</span>
-                <span className="text-emerald-400 font-bold">0.04s (100% Accelerated)</span>
-              </div>
-              <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                <div className="h-full w-[95%] bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full" />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-xxs font-mono">
-                <span className="text-slate-400">Standard CPU Cluster Fallback</span>
-                <span className="text-slate-500">0.96s</span>
-              </div>
-              <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                <div className="h-full w-[15%] bg-slate-800 rounded-full" />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 flex justify-between items-center text-xxs font-mono border-t border-slate-900/80">
-            <div className="text-center">
-              <span className="text-slate-500 block">Model Weights</span>
-              <span className="text-slate-300 font-bold mt-0.5 block">1.34 GB</span>
-            </div>
-            <div className="text-center">
-              <span className="text-slate-500 block">Precision</span>
-              <span className="text-slate-300 font-bold mt-0.5 block">FP16 ROCm</span>
-            </div>
-            <div className="text-center">
-              <span className="text-slate-500 block">Active Device</span>
-              <span className="text-cyan-400 font-bold mt-0.5 block">AMD Cloud GPU</span>
-            </div>
-          </div>
-        </div>
+        
       </main>
 
       {/* Feature section */}
